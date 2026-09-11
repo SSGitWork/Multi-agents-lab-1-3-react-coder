@@ -1,0 +1,60 @@
+{
+  "name": "Lab 1.3 - ReAct Coder",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:20-bullseye",
+  "features": {
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.12"
+    },
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "moby": "false"
+    }
+  },
+  "postCreateCommand": "bash .devcontainer/setup.sh && pip install -r requirements.txt",
+  "containerEnv": {
+    "HELICONE_API_KEY": "${localEnv:HELICONE_API_KEY}"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "esbenp.prettier-vscode",
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "continue.continue",
+        "ms-azuretools.vscode-docker",
+        "ms-toolsai.jupyter",
+        "charliermarsh.ruff",
+        "ms-python.black-formatter"
+      ],
+      "settings": {
+        "files.autoSave": "afterDelay",
+        "editor.tabSize": 2,
+        "editor.wordWrap": "on",
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "editor.defaultFormatter": "ms-python.black-formatter",
+        "editor.formatOnSave": true,
+        "github.copilot.enable": {
+          "*": false,
+          "plaintext": false
+        },
+        "github.copilot.editor.enableAutoCompletions": false,
+        "chat.agent.enabled": false,
+        "workbench.activityBar.hiddenExtensionItemIds": [
+          "github.copilot",
+          "github.copilot.chat"
+        ]
+      }
+    }
+  },
+  "portsAttributes": {
+    "5173": {
+      "label": "Vite Dev Server",
+      "onAutoForward": "openBrowser"
+    }
+  },
+  "forwardPorts": [5173, 8000, 8080, 8501, 6006],
+  "remoteUser": "root",
+  "mounts": [
+    "source=${localEnv:HOME}/.anthropic,target=/root/.anthropic,type=bind,consistency=cached",
+    "source=${localEnv:HOME}/.openai,target=/root/.openai,type=bind,consistency=cached"
+  ]
+}
