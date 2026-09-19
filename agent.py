@@ -134,7 +134,15 @@ def build_system_prompt(semantic_memory: SemanticMemory, task: str) -> str:
     str
         The complete system prompt, with memories appended if available.
     """
-    raise NotImplementedError("TODO: implement build_system_prompt()")
+    if semantic_memory.count() == 0:
+        return SYSTEM_PROMPT
+
+    memories = semantic_memory.retrieve(task, top_k=3)
+    if not memories:
+        return SYSTEM_PROMPT
+
+    memory_block = "\n".join(f"- {memory}" for memory in memories)
+    return f"{SYSTEM_PROMPT}\n\n## Relevant memories\n{memory_block}"
 
 
 def parse_llm_response(response_text: str) -> dict[str, Any]:
@@ -184,7 +192,36 @@ def parse_llm_response(response_text: str) -> dict[str, Any]:
     dict
         A structured dict with the keys described above.
     """
-    raise NotImplementedError("TODO: implement parse_llm_response()")
+    text = response_text.strip()
+
+    thought = ""
+    if "Thought:" in text:
+        thought = text.split("Thought:", 1)[1].strip()
+        for marker in ("\nAction:", "\nFINAL ANSWER:"):
+            if marker in thought:
+                thought = thought.split(marker, 1)[0].strip()
+                break
+
+    if "FINAL ANSWER:" in text:
+        final_answer = text.split("FINAL ANSWER:", 1)[1].strip()
+        return {"thought": thought, "final_answer": final_answer}
+
+    action = ""
+    if "Action:" in text:
+        action = text.split("Action:", 1)[1].strip()
+        if "\nAction Input:" in action:
+            action = action.split("\nAction Input:", 1)[0].strip()
+
+    action_input_text = ""
+    if "Action Input:" in text:
+        action_input_text = text.split("Action Input:", 1)[1].strip()
+
+    try:
+        action_input = json.loads(action_input_text)
+    except Exception as exc:
+        return {"thought": thought, "action": action, "parse_error": str(exc)}
+
+    return {"thought": thought, "action": action, "action_input": action_input}
 
 
 def run_agent(task: str) -> AgentResult:
@@ -235,7 +272,45 @@ def run_agent(task: str) -> AgentResult:
         Structured result including the final answer, iteration count,
         and a log of all tool calls made.
     """
-    raise NotImplementedError("TODO: implement run_agent()")
+    semantic_memory = SemanticMemory()
+    buffer = SlidingWindowBuffer()
+    buffer.set_system(build_system_prompt(semantic_memory, task))
+    buffer.add("user", task)
+
+    tool_calls: list[dict[str, Any]] = []
+
+    for iteration in range(1, MAX_ITERATIONS + 1):
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=buffer.messages(),
+            tools=TOOL_SCHEMAS,
+            tool_choice="none",
+        )
+        assistant_text = response.choices[0].message.content or ""
+        buffer.add("assistant", assistant_text)
+
+        parsed = parse_llm_response(assistant_text)
+        if "final_answer" in parsed:
+            final_answer = parsed["final_answer"]
+            semantic_memory.store(f"Task: {task}\nAnswer: {final_answer}")
+            return AgentResult(final_answer, iteration, tool_calls, False)
+
+        if "parse_error" in parsed:
+            observation = f"OBSERVATION: Parse error – {parsed['parse_error']}"
+            buffer.add("user", observation)
+            continue
+
+        action = parsed.get("action", "")
+        action_input = parsed.get("action_input", {})
+        tool_result = dispatch_tool(action, action_input)
+        tool_calls.append({"tool": action, "args": action_input, "result": tool_result})
+
+        observation = f"OBSERVATION: {tool_result}"
+        if not tool_result.startswith("ERROR"):
+            semantic_memory.store(observation)
+        buffer.add("user", observation)
+
+    return AgentResult("MAX_ITERATIONS reached", MAX_ITERATIONS, tool_calls, True)
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
